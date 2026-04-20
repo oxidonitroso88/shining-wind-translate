@@ -125,7 +125,23 @@ Para:
 * detectar offsets
 * analizar formatos gráficos
 
-📸 *Sugerencia:*
+📸 Steps
+
+![Crystal](images/crys.png)
+Primero Abro Crystaltile2 y abro uno de los archivos .raw (convertidos de .txr con el script de quickbms)
+
+Apenas se abre, me muestra el codigo hexadecimal (en este caso tiene fondo negro y letras negras por eso no se ve bien, pero por ahora esto no nos importa) apretamos f5 y pasamos a la parte grafica.
+![Crystal](images/crys2.png)
+Nos muestra un monton de cosas verdes, sin sentido, presionamos en el menu donde dice, tile format, y elegimos gba 8bpp, y se vera como la imagen. (en el caso de no ver esa opcion habilitenlo desde view, attribute window)
+![Crystal](images/crys3.png)
+A partir de ahi, deben jugar con el tamaño (width y height) hasta que noten algo que parezca una imagen. cada tipo de archivo txr debe tener una resolucion distinta. por ejemplo una imagen que dice NOW LOADING (la imagen de carga) es de 80x23 y las de bg puede ser 320x200 por decir algo. es cuestion de ir jugando hasta que encuentras algo que se asemeje. (por alguna razon chatgpt puede decirte que resolucion es posible de acuerdo al peso en bytes del archivo) asi que puedes pedirle una pista sobre que resolucion de archivo sería posible si pesa tantos bytes.
+![Crystal](images/crys4.png) 
+En este caso parece que hay algo aqui, pero no se entiende que es debido a que no hay una paleta de colores adecuada. por ahora iremos a pallette y escogeremos GRAY DIVISION, obteniendo una imagen reconocible.
+![Crystal](images/crys5.png)
+pero todavia no se ve bien. esto es debido a que cada imagen tiene un offset. si haces para arriba o para abajo con la ruedita sobre la imagen se mueve el offsett en el visor de atributos pero no demasiado. puedes ir variando manualmente hasta que se vea bien, o (intentando varias veces, con ctrl+flecha izquierda o derecha) lo mantienes apretado y es como si se sintonizara, hasta que quede decente. 
+![Crystal](images/crys6.png) 
+Los offset que encontre por lo general eran 170 o 210, creo que es el codigo que esta antes que empiece la imagen. 
+
 
 * Imagen mostrando una textura correctamente alineada
 * Cambio de offset (ej: 0x170)
