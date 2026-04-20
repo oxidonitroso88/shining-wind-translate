@@ -81,7 +81,7 @@ El archivo `ST.iso` se puede:
 Esto permite acceder a más archivos internos del juego.
 
 💡 En este caso, el archivo **no tenía protección**, por lo que no fue necesario ningún password.
-
+![Apache2](images/insidestiso.png)
 ---
 
 ## 🧰 Paso 4 — Herramientas adicionales
