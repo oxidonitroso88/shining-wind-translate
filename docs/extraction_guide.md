@@ -27,8 +27,8 @@ Se utilizó **Apache2** para abrir la imagen `.iso` del juego.
 
 📸 *Sugerencia de imagen:*
 
-* Pantalla mostrando la ISO abierta en Apache2
-* Lista de archivos del juego
+![Apache2](images/apache.png)
+
 
 ---
 
