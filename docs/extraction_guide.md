@@ -110,6 +110,9 @@ Para interpretar texto japonés:
 Para extracción de archivos binarios y contenedores.
 
 Los archivos .TXR de la carpeta common contienen imagenes, graficos cuyas dimensiones pueden variar, pero para modificarlos hay que extraerlos.  para eso uso el script de quickbms que llamé /scripts/extract_txr.bms que los extrae del formato txr a formato RAW. Para no tener que extraer uno por uno, utilicé /scripts/extract_all.bat que extrae todos los archivos txr de la carpeta common a .raw que pueden ser abiertos por Crystaltile2 
+
+
+![quickbms](images/quickbmsraw.png)
 ---
 
 ### 🧩 CrystalTile2
