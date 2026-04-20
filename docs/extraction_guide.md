@@ -91,10 +91,11 @@ Una vez accedido el contenido interno, se utilizaron varias herramientas clave:
 
 Para inspección hexadecimal de archivos.
 
-📸 *Sugerencia:*
+📸 
 
-* Vista del header TXR
+![Apache2](images/cvm.png)
 
+![Apache2](images/cvmiso.png)
 ---
 
 ### 🔤 Tabla SJIS
