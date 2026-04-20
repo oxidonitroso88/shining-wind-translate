@@ -65,8 +65,9 @@ ST.hdr  → header separado
 
 📸 *Sugerencia de imagen:*
 
-* Consola ejecutando el comando
-* Archivos generados
+![Apache2](images/cvm.png)
+
+![Apache2](images/cvmiso.png)
 
 ---
 
@@ -93,9 +94,7 @@ Para inspección hexadecimal de archivos.
 
 📸 
 
-![Apache2](images/cvm.png)
 
-![Apache2](images/cvmiso.png)
 ---
 
 ### 🔤 Tabla SJIS
