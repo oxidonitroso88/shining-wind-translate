@@ -1,0 +1,8 @@
+get NAME basename
+string NAME + ".raw"
+
+goto 0xA0
+get SIZE asize
+math SIZE -= 0xA0
+
+log NAME 0xA0 SIZE
