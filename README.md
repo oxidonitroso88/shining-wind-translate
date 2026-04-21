@@ -1,5 +1,6 @@
 # shining-wind-translate
 i don't know programming or rom hacking, but I liked the game and characters, and since there is not a single translation out there, i wanted to documentate my findings or tools i found while trying to translate the game.  This most likely will get abandoned, but whatever i find ill post it so someone more capable in the future may try
+# PARA TENER UNA IDEA DE LA ESTRUCTURA DE LOS ARCHIVOS Y LO QUE VOY DESCUBRIENDO VAYAN A LOS DOCS, EN REVERSE ENGINEERING
 
 # PS2 TXR Texture & Text Research
 
