@@ -1,0 +1,34 @@
+REVERSE_ENGINEERING_NOTES.md — Sesión 2
+Glosario de personajes
+Se extrajeron todos los speakers únicos de los diálogos. Los nombres oficiales en inglés se confirmaron desde los archivos AHX de voces de batalla:
+
+キリヤ → KIRIYA, シーナ → SEENA, ゼクティ → XECTY, ゼロ → XERO, ロウエン → ROUEN, ジンクロウ → JINCROW, カリス → CARIS, クレハ → KUREHA, ホウメイ → HOUMEI, クララクラン → CLALA, コウリュウ → KOURYU, トライハルト → TRAIHARD, キルレイン → KILLRAIN, ジード → ZEED
+
+Formato de diálogos — estructura confirmada
+[ID_AUDIO]
+JP: [texto]
+[nombre_speaker]
+ES: [traducción]
+El speaker siempre aparece en la línea entre JP: y ES:, nunca dentro del texto.
+Archivos OVERLAY
+Los 11 archivos OVL00-OVL10.BIN contienen código MIPS puro, sin texto traducible. Descartados.
+Archivos SSS_PAC
+144 archivos SSS_PAC_001 al SSS_PAC_144. No contienen diálogos — son datos de batalla/animación. Descartados para traducción.
+RIGHTNAME.DPK
+Contiene nombres de archivos de texturas de bustos de personajes en ASCII. No es texto traducible — es una tabla de referencia interna del motor.
+SYSTEM.RAX
+Contiene referencias a todos los recursos del juego: fuentes, iconos, DPKs, texturas de UI. No tiene texto japonés traducible directamente — es un contenedor de recursos.
+Formato TDMV
+Formato interno del motor para bloques de diálogo embebidos dentro de los RAX. Estructura:
+TDMV + [textos de sistema sin ID] + [speaker][ID][texto][speaker][ID][texto]...
+Presente en casi todos los RAX grandes. El extractor original no los capturó porque buscaba el patrón [A-Z]\d\d-\d\d\d aislado. Pendiente: escribir extractor específico para TDMV.
+Texto de la intro — ラッシィ y 久遠の森の詠み手
+Localizado mediante PCSX2 debugger. El texto está en RAM en 00AA0B30 con IDs M16-037, M16-038, M16-039. El archivo fuente es TITLE.RAX en offset 0x0132F0, bajo el nombre interno event/cs_canvasation.bss. El bloque está comprimido con LZSS. Pendiente: implementar descompresor LZSS para extraer este texto.
+Archivos AHX
+Son voces de batalla (prefijo BVO = Battle VOice) de todos los personajes principales. No contienen texto traducible pero confirman los nombres oficiales en inglés del juego.
+Pendientes para próxima sesión
+
+Implementar descompresor LZSS para TITLE.RAX
+Escribir extractor de bloques TDMV para capturar diálogos no extraídos
+Investigar reinserción de texto en archivos RAX
+Traducir TXTRESJP.DPK (menú/UI, 307 entradas ya extraídas)
