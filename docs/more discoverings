@@ -1,0 +1,68 @@
+REVERSE_ENGINEERING_NOTES.md — Sesión 2
+Glosario de personajes — nombres oficiales confirmados
+Extraídos desde archivos AHX de voces de batalla:
+
+キリヤ → KIRIYA, シーナ → SEENA, ゼクティ → XECTY, ゼロ → XERO, ロウエン → ROUEN, ジンクロウ → JINCROW, カリス → CARIS, クレハ → KUREHA, ホウメイ → HOUMEI, クララクラン → CLALA, コウリュウ → KOURYU, トライハルト → TRAIHARD, キルレイン → KILLRAIN, ジード → ZEED, ソウマ → SOUMA, バソウ → BASOU
+
+Formato de diálogos — estructura confirmada
+[ID_AUDIO]
+JP: [texto]
+[nombre_speaker]
+ES: [traducción]
+El speaker siempre está entre JP: y ES:, nunca dentro del texto.
+Archivos descartados para traducción
+
+OVL00-OVL10.BIN → código MIPS puro, sin texto
+SSS_PAC_001 al 144 → datos de batalla/animación, sin diálogos
+RIGHTNAME.DPK → tabla interna de nombres de archivos de texturas
+
+Formato TDMV — diálogos embebidos en RAX
+Formato interno del motor para bloques de diálogo. Estructura binaria:
+54 44 4D 56 00 01 00 00 XX XX 00 00  → header (12 bytes)
+[speaker]\x00                         → nombre del hablante
+[ID]\x00                              → ej: "M16-037"
+[línea1]\x0A\x00                      → texto + newline + null
+[línea2]\x0A\x00                      → (opcional)
+[siguiente speaker]\x00               → cuando cambia el hablante
+Presente en casi todos los RAX grandes. El extractor original no los capturó porque buscaba el patrón [A-Z]\d\d-\d\d\d aislado.
+Texto de la intro — ラッシィ y 久遠の森の詠み手
+
+Localizado mediante PCSX2 debugger buscando bytes Shift-JIS en RAM
+Encontrado en RAM en 0x00AA0AEF, formato TDMV
+Archivo fuente: TITLE.RAX offset 0x0132F0, bloque interno event/cs_canvasation.bss
+El bloque está comprimido con LZSS — el descompresor actual no lo descifra correctamente, pendiente investigar variante del algoritmo
+Texto extraído volcando eeMemory.bin desde savestate de PCSX2 (.p2s es ZIP con compresión Zstandard, method=93)
+Guardado en dialogos_extraidos/PAC_INTRO_TITLE.txt
+IDs: M16-037 a M16-047
+
+Contenido de la intro:
+
+M16-037, M16-038 → ラッシィ (onomatopeyas)
+M16-039 a M16-047 → 久遠の森の詠み手 (narradora del juego)
+
+Método para extraer eeMemory.bin de savestate PCSX2:
+pythonimport zstandard as zstd, struct, re
+
+with open("savestate.p2s", "rb") as f:
+    zip_data = f.read()
+
+headers = [m.start() for m in re.finditer(b'PK\x03\x04', zip_data)]
+for h in headers:
+    fname_len  = struct.unpack_from("<H", zip_data, h+26)[0]
+    extra_len  = struct.unpack_from("<H", zip_data, h+28)[0]
+    comp_size  = struct.unpack_from("<I", zip_data, h+18)[0]
+    fname      = zip_data[h+30:h+30+fname_len].decode('utf-8', errors='replace')
+    data_start = h + 30 + fname_len + extra_len
+    if fname == "eeMemory.bin":
+        dctx = zstd.ZstdDecompressor()
+        ram = dctx.decompress(zip_data[data_start:data_start+comp_size],
+                              max_output_size=64*1024*1024)
+Pendientes para próxima sesión
+
+Investigar variante LZSS de Media Vision para descomprimir TITLE.RAX correctamente
+Escribir extractor general de bloques TDMV para todos los RAX
+Reinserción de texto traducido en archivos RAX (formato null-terminated facilita reemplazo directo si la traducción es igual o más corta en bytes)
+Traducir TXTRESJP.DPK (307 entradas de menú/UI ya extraídas)
+
+
+¡Buenas noches! Buen trabajo hoy — avanzamos mucho en entender la estructura interna del juego.
