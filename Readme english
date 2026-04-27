@@ -1,0 +1,225 @@
+# Shining Wind (PS2) — Reverse Engineering & Translation Project
+
+Reverse engineering research and fan translation groundwork for **Shining Wind (PlayStation 2, 2006)** developed by Media.Vision and published by SEGA.
+
+This repository documents the internal structure of the game, file formats, and extraction pipelines required to access dialogue, audio, and script data for translation and reinsertion.
+
+---
+
+## 📌 Project Goals
+
+- Extract all in-game text (dialogue, UI, database entries)
+- Map voice lines ↔ subtitles using internal IDs
+- Reverse engineer proprietary Media.Vision formats
+- Build tooling for translation reinsertion
+- Prepare full fan translation pipeline
+
+---
+
+## 🗂 Disc Structure
+
+
+CD/
+├── SLPM_666.71 # Main PS2 ELF (MIPS executable)
+├── MODULES.LST # Module list
+├── MODULES.CIX # Memory index
+├── modules/ # IOP drivers (CRI, PAD, etc.)
+├── st.cvm # Main game data container
+└── voice.cvm # Voice audio archive (.ADX)
+
+
+---
+
+## 📦 CVM Containers
+
+The game uses **CVM archives (ISO-like containers)**.
+
+- `st.cvm` → game assets (scripts, textures, data)
+- `voice.cvm` → voice audio only (.ADX)
+
+Extractable via **QuickBMS**.
+
+---
+
+## 🎤 voice.cvm
+
+### Structure
+
+Voice data is organized by scenario folders:
+
+- `E01–E11` → main story events  
+- `H01–H11` → heroine routes  
+- `M00–M16` → main arc  
+- `S00–S14` → side characters  
+
+### Notes
+
+- Contains only `.ADX` audio files
+- No text/subtitles included
+- Some entries are missing (e.g. S00 incomplete set)
+
+### Key Insight
+
+> Subtitle data is NOT in voice.cvm  
+> It is stored in `st.cvm → PAC_TOWN##_01.RAX`
+
+---
+
+## 📁 st.cvm Content Overview
+
+| Extension | Type |
+|----------|------|
+| .rax | Main containers |
+| .txr | Textures |
+| .ahx | Audio (CRI middleware) |
+| .adx | Alternate audio |
+| .bra | Index tables |
+| .sfd | Cutscenes |
+| .dpk | Text databases |
+| .cix | Memory index |
+| .cnf | Config |
+
+---
+
+## 🧱 RAX Format
+
+### Magic
+
+```
+
+RAX = 0x52 41 58
+
+Internal subformats
+INAB → Media.Vision container layer
+LAPB → script/animation tables
+TXR → embedded textures
+AHX → embedded audio
+TDMV → dialogue blocks
+DCMV → cutscene data
+LZSS → compression layer
+DPK → embedded databases
+💬 Dialogue System (PAC_ Files)
+
+All story text is distributed across multiple RAX files:
+
+PAC_TOWN##_01.RAX
+PAC_MAIN##_##.RAX
+PAC_ROUTE##_##.RAX
+PAC_MIND_##.RAX
+PAC_EVMAP##_01.RAX
+Format
+[VOICE_ID][TEXT]
+
+Example:
+
+M00-002ここは、どこだ……？
+Mapping
+VOICE_ID → voice.cvm audio file
+TEXT → subtitle displayed in-game
+📊 Text Extraction Scope
+Category	Approx. entries
+Dialogue (PAC_*)	~16,631
+UI / Menu (TXTRESJP)	307
+Enemies (DBENEMYINFO)	848
+Shop text	394
+Area info	4,310
+Intro text	11
+Total	~23,000
+🧾 DPK Format
+
+Binary database format used for:
+
+UI text
+enemy names
+item descriptions
+world data
+Structure
+Fixed header
+pointer table
+Shift-JIS encoded strings
+0x00 separators
+🎭 TDMV Format (Advanced Dialogue Blocks)
+Magic
+TDMV = 0x54 44 4D 56
+Structure
+Speaker name (Shift-JIS)
+Voice ID
+Dialogue text (multi-line supported)
+Usage
+Intro sequences
+System messages
+Special scripted events
+🎬 Intro (TITLE.RAX)
+Compressed with LZSS
+Extracted via PS2 RAM dump (PCSX2)
+Contains narrative introduction
+
+Key characters:
+
+ラッシィ (Rasshi)
+久遠の森の詠み手 (Narrator of the Eternal Forest)
+🎧 Audio System (AHX / ADX)
+.ADX → main voice lines
+.AHX → effects/music
+
+Naming convention:
+
+SND_BVO_[NAME]##_###.AHX
+
+Confirms official English names via asset references.
+
+🛠 Tools Used
+QuickBMS (CVM extraction)
+WinHex / HxD (binary analysis)
+CrystalTile2 (Shift-JIS inspection)
+Python (struct parsing tools)
+PCSX2 debugger (RAM extraction)
+zstandard (savestate decompression)
+🚫 Excluded Files
+File	Reason
+OVL00–OVL10.BIN	Raw MIPS code
+SSS_PAC_001–144	No dialogue data
+RIGHTNAME.DPK	Texture index only
+SYSTEM.RAX	System resources
+📈 Key Findings
+Dialogue is fully data-driven via voice ID mapping
+Multiple overlapping PAC containers exist per scene
+RAX files can contain nested RAX + audio + script layers
+Intro text is not stored as plain files (compressed in RAM)
+PCSX2 savestates use Zstandard compression
+🔧 Known Challenges
+LZSS variant used by Media.Vision not fully decoded
+TDMV reinsertion tooling required
+RAX repacking not yet implemented
+Some DPK formats still partially unknown
+🧭 Roadmap
+Reverse Engineering
+ Full RAX parser + repacker
+ TDMV extractor/reinserter
+ LZSS variant decoder (Media.Vision)
+ PAC_ROUTE / PAC_MEV full coverage
+Translation Pipeline
+ Export → Translate → Reinsert workflow
+ Full dialogue database builder
+ Encoding-safe reinsertion system
+Tools
+ GUI script editor
+ Patch builder (ISO rebuild)
+ Dialogue viewer (voice sync)
+📌 Notes
+One RAX file can contain multiple scenes
+Voice IDs are the backbone of the entire script system
+Text exists in both flat and embedded binary forms
+System heavily relies on pointer tables + compression layers
+⚠️ Disclaimer
+
+This project is for educational and preservation purposes only.
+No original game assets are redistributed.
+
+🧠 Summary
+
+Shining Wind uses a highly layered proprietary system:
+
+CVM → RAX → (INAB / LAPB / TDMV / LZSS) → PAC scripts → VOICE ID mapping
+
+Understanding this chain is key to full translation and reinsertion.
