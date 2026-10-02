@@ -1,0 +1,901 @@
+Shining Wind — Master Map de ingeniería inversa
+1. Vista general del sistema
+A día de hoy, el flujo que estamos reconstruyendo se puede representar así:
+SLPM_666.71
+│
+├── Resource Manager del juego
+│     │
+│     ├── carga contenedores/recursos
+│     ├── caché
+│     ├── SSZL
+│     └── dispatch según tipo
+│
+├── sistema de I/O / streaming
+│     │
+│     ├── ADXF / STM
+│     └── rutas "VOL:/..."
+│
+├── registro de backends
+│     │
+│     ├── MFS
+│     ├── CDV
+│     └── ROFS  ← importante
+│
+└── ROFS
+      │
+      ├── volúmenes
+      ├── CVM
+      ├── directorios/archivos
+      └── acceso físico a los datos
+
+Y nuestra cadena de interés actualmente es:
+recurso solicitado
+       ↓
+Resource Manager
+       ↓
+"VOL:/...."
+       ↓
+backend ROFS
+       ↓
+volumen montado
+       ↓
+índice/directorio CVM
+       ↓
+entrada del archivo
+       ↓
+posición/tamaño físico
+       ↓
+datos del archivo
+       ↓
+RAX / DPK / TDMV / TXR / etc.
+
+2. Archivos físicos del juego
+El disco contiene:
+CD/
+├── SLPM_666.71
+├── MODULES.LST
+├── MODULES.CIX
+├── modules/
+│   ├── CRI_ADXI.IRX
+│   ├── PADMAN.IRX
+│   ├── MCMAN.IRX
+│   ├── LIBSD.IRX
+│   └── ...
+├── st.cvm
+└── voice.cvm
+
+st.cvm
+Es el gran contenedor de recursos del juego.
+Encontramos aproximadamente:
+2069  .rax
+724   .txr
+285   .ahx
+72    .adx
+64    .bra
+31    .sfd
+14    .dpk
+
+más .cix, .lst, .cnf, etc.
+voice.cvm
+Contiene principalmente voces .ADX organizadas por grupos:
+E01-E11
+H01-H11
+M00-M16
+S00-S14
+
+Los subtítulos no están en voice.cvm.
+3. Sistema de diálogos
+Tenemos prácticamente resuelta esta parte.
+Los diálogos normales están en:
+PAC_TOWN##_01.RAX
+PAC_MAIN##_##.RAX
+PAC_ROUTE##_##.RAX
+PAC_EVMAP##_01.RAX
+PAC_MIND_*.RAX
+PAC_MEV*.RAX
+PAC_BEV*.RAX
+PAC_FREE*.RAX
+PAC_SEV*.RAX
+PAC_OEV*.RAX
+PAC_SUB*.RAX
+...
+
+Formato:
+[ID_AUDIO][texto Shift-JIS]
+
+Ejemplo:
+M00-002ここは、どこだ……？
+
+que corresponde a:
+voice.cvm/M00/M00-002.ADX
+
+Tenemos aproximadamente 16.631 líneas de diálogo extraídas.
+4. RAX
+Magic externo:
+52 41 58
+R  A  X
+
+Puede contener:
+INAB
+LAPB
+TXR
+AHX
+RAX anidado
+TDMV
+DCMV
+DPK
+LZSS
+...
+
+Importante: los tags internos que encontramos en el Resource Manager como:
+XAR
+ARB
+XTB
+NAB
+RXT
+
+no deben confundirse automáticamente con el .RAX externo.
+5. TDMV
+Magic:
+54 44 4D 56
+T  D  M  V
+
+Estructura aproximada confirmada:
+header 12 bytes
+speaker\0
+ID\0
+línea 1
+0A 00
+línea 2 opcional
+...
+
+Lo encontramos en:
+- intro de TITLE;
+- mensajes de sistema;
+- diálogos de batalla.
+Caso importante:
+TITLE.RAX
+event/cs_canvasation.bss
+offset fuente 0x0132F0
+RAM PCSX2 0x00AA0AEF
+
+y ya sabemos reinsertarlo bajo determinadas condiciones.
+6. DPK
+Cabecera común:
++00  version = 01 00 00 00
++04  padding
++08  offset bloque texto
++0C  cantidad entradas
++10  tabla de punteros
+
+Texto:
+Shift-JIS
+strings terminadas en 00
+
+Bases identificadas:
+DBAREAINFO
+TXTRESJP
+SHOPTEXT
+DBENEMYINFO
+DBENEMYWAZAINFO
+DBSTAGEINFO
+DBWORLDMAPINFO
+DBCLEARCONDITION
+DBLANDINFO
+DBSOULTREEINFO
+...
+
+7. SSZL
+Tenemos identificado el descompresor:
+FUN_00221FF0
+
+Magic:
+SSZL
+0x53535A4C
+
+Funciones:
+00221FF0 → descomprimir
+00222190 → comprobar magic SSZL
+00222170 → obtener tamaño descomprimido (+0x0C)
+
+Usa un diccionario circular de:
+8192 bytes
+
+Por tanto es una variante LZ.
+8. Resource Manager del juego
+Esta es la capa de recursos por encima del filesystem.
+001F3EA0
+Carga genérica/cache:
+Resource_LoadGeneric
+
+Hace:
+buscar caché
+   ↓
+si no existe
+   ↓
+crear objeto 0x5C
+   ↓
+001F0E70
+   ↓
+registrarlo en tabla global
+
+001F0E70
+Procesa los datos:
+si SSZL:
+    obtener tamaño
+    malloc
+    descomprimir
+else:
+    usar datos originales
+
+↓
+001F2CC0
+
+001F1A20
+Dispatcher de entradas.
+Obtiene entrada con:
+001F18A0
+
+y calcula:
+payload = entry + entry[2] + 0x10
+
+Luego distingue tags:
+XAR
+ARB
+XTB
+NAB
+RXT
+fallback genérico
+
+También tenemos:
+001F1800 → cantidad de entradas
+001F2440 → loader async/state machine
+001F2710 → loader de contenedor
+001F2270 → inicializa objeto 0x5C
+001F2E00 → inicialización/path/hash
+001F47E0 → cache lookup
+
+9. Capa de streaming ADXF / STM
+Seguimos el Resource Manager hacia abajo y encontramos otra capa.
+Cadena:
+0019F5D0
+   ↓
+0019FC80
+   ↓
+0019FF50
+   ↓
+0012A8A0
+   ↓
+0012A8E8
+
+0019FF50
+Esta fue una pieza fundamental.
+Construye explícitamente:
+"VOL:/" + ruta
+
+La constante está en:
+003E5478 = "VOL:/"
+
+y sólo tiene XREF desde:
+0019FF50
+
+También obtiene el basename, normaliza mayúsculas, etc.
+10. Handles ADXF
+0012A8E8 crea/configura un handle de streaming.
+Cadena:
+0012A8E8
+   ├── 0012A5F8
+   │       ↓
+   │   crear handle
+   │
+   └── 0012A738
+           ↓
+       configurar stream
+
+Pool
+Base:
+0037D368
+
+Cantidad:
+16 handles
+
+Stride:
+0x34 bytes
+
+0012A598 busca el primer slot libre.
++0x00 es prácticamente confirmado como:
+busy / active
+
+11. Objeto auxiliar del stream
+0012A5F8 además crea:
+00131C78(0, 0x100)
+
+y guarda el puntero en:
+handle + 0x04
+
+Por tanto:
+ADXF handle 0x34 bytes
+       │
+       +04
+        │
+        ▼
+objeto auxiliar 0x100 bytes
+
+00131E00 configura ese objeto.
+Tenemos confirmado:
+obj +0x0C
+obj +0x10
+obj +0x18
+obj +0x49
+obj +0x54 ← PATH
+obj +0x58
+obj +0x5C
+
+La instrucción exacta:
+00131e44  sw s3,0x54(s0)
+
+confirma que:
+objeto +0x54 = pathname
+
+12. Estado async del stream
+Tenemos:
+00132010
+00132030
+0012BCA8
+0012B598
+0012AF28
+0012AE88
+
+00132010:
+obj[0x49] == 0 && obj[0x4D] != 0
+
+00132030:
+obj[0x4A] != 0 || obj[0x4D] != 0
+
+Son claramente flags del estado async, aunque todavía no les asignamos nombres definitivos.
+13. El pathname baja al filesystem
+00132898 fue otra función fundamental.
+Usa:
+objeto +0x54
+
+directamente como pathname:
+FUN_0013E9F8(
+    obj->pathname,
+    obj->+0x58,
+    0
+);
+
+Así llegamos a la capa de backends.
+14. Registro de backends
+0013E9F8:
+pathname
+   ↓
+0013EB98
+   ↓
+separar "PREFIX:ruta"
+   ↓
+0013E950
+   ↓
+0013E628
+   ↓
+buscar backend
+   ↓
+backend->función +0x10
+
+0013EB98
+Por ejemplo:
+VOL:/PAC_TOWN01_01.RAX
+
+queda conceptualmente:
+prefix = "VOL"
+path   = "/PAC_TOWN01_01.RAX"
+
+Registro
+Tabla:
+004289E0
+
+32 entradas:
+stride = 0x10
+
+Estructura confirmada:
++00 backend/object pointer
++04 nombre
++08 ?
++0C ?
+
+0013E628 busca por nombre.
+0013E550 registra:
+RegisterBackend(name, constructor)
+
+15. Backends conocidos
+Encontramos:
+"MFS"
+"CDV"
+"ROFS"
+
+MFS / CDV
+001334E8 registra:
+MFS → 00147370
+CDV → 001429A0
+
+Están relacionados con el runtime ADX/streaming.
+ROFS
+Encontramos:
+003DB838 = "ROFS"
+
+y:
+001290D8
+    ↓
+0013E4C8("ROFS", 00190060)
+
+Por tanto:
+ROFS es un backend registrado en el sistema de filesystem.
+
+16. ROFS vtable
+00190060 devuelve:
+003A80E0
+
+que contiene una tabla grande de funciones:
++00 001900A0
++04 001900B8
++08 001900C0
++10 001900D8
++14 001900F0
++18 00190108
++1C 00190148
+...
++5C 00190270
++60 00190390
+
+La función +0x10:
+001900D8
+   ↓
+00189DA8
+   ↓
+0018BB60
+
+17. 0018BB60: búsqueda de archivo ROFS
+Esta función ya es muy importante en nuestro mapa.
+Hace aproximadamente:
+pathname
+   ↓
+0018A750
+   ↓
+separar volumen/path
+   ↓
+0018A9C8
+   ↓
+buscar volumen
+   ↓
+volume_record +0x10
+   ↓
+0018FD88
+   ↓
+buscar entrada
+   ↓
+001891F8
+   ↓
+crear handle/registro activo
+
+18. Registros de volumen ROFS
+0018A9C8 nos reveló la estructura de la tabla.
+Gestor global:
+DAT_003A7FD0
+
+Campos conocidos:
++08 = cantidad de registros de volumen
++0C = parámetro/pool relacionado
++20 = pool de registros activos
++28 = primer volume record
++2C = current/default volume record
++48 = objeto/media auxiliar
+
+Los volume records tienen:
+tamaño = 0x34
+
+y:
+record +0x16 = nombre del volumen
+
+0018BB40 devuelve:
+default_record + 0x16
+
+19. Creación de volumen: 0018AAA0
+Esta función crea un volume record.
+Requiere nombre de:
+1–8 caracteres
+
+Busca un registro libre y hace:
+memset(record, 0, 0x34)
+
+record +0x00 = param_2
+record +0x04 = 0
+record +0x16 = nombre
+record +0x24... = 0
+
+Después:
+obj = FUN_00189298(...);
+record->+0x10 = obj;
+
+20. Objeto de record +0x10
+Acabamos de aclararlo.
+00189298:
+limpia 0x48 bytes
+
++00 = 0
++04 = param_2
++08 = 0
+...
+
+y devuelve el mismo puntero.
+Así que:
+Volume Record (0x34)
+      │
+      +0x10
+        │
+        ▼
+estructura de 0x48 bytes
+
+Corrección importante respecto de nuestra hipótesis anterior:
+volume_record +0x10 no es directamente una tabla de archivos.
+Es un objeto/estructura que posteriormente participa en las búsquedas.
+21. Lookup de entradas
+0018FD88 decide entre dos sistemas:
+volume_record +0x04 == 0
+          │
+          ├── sí → 0018FC88
+          │
+          └── no → 0018FAF8
+
+0018FC88
+Búsqueda lineal/hash.
+Características:
+"."  → índice especial 1
+".." → índice especial 2
+
+Hash:
+0018F3E8
+
+8 bits, seed:
+0xDA
+
+Las entradas tienen:
+stride = 0x30
+
+Campos observados:
++0C flags
++0D hash
++0E nombre/patrón
+
+0018FAF8
+Búsqueda binaria.
+También reconoce:
+.
+..
+
+Convierte el nombre a mayúsculas y busca sobre entradas de:
+0x30 bytes
+
+Usa:
+entry +0x24 flags
+entry +0x26 nombre
+
+Por tanto, sabemos con bastante seguridad que ROFS tiene estructuras de directorio/archivo con entradas de 0x30 bytes.
+22. Handles activos ROFS
+Después de encontrar una entrada, 0018BB60 busca un slot libre de:
+0x3C bytes
+
+y llama:
+001891F8
+   ↓
+00189148
+
+Campos conocidos:
++00 = low32(valor 64-bit)
++04 = high32(valor 64-bit)
+
++0C = param2
++10 = param3
+
++18 = ceil(low32 / 0x800)
+
++1C = volume/context
+
++34 = active = 1
++36 = 0
++38 = 0
++3A = 0
+
+Esto es muy sugestivo porque:
+0x800 = 2048 bytes
+
+que coincide con el tamaño de sector típico del medio óptico/CVM.
+Todavía no llamaría definitivamente a +00 "tamaño" u "offset" hasta terminar la cadena.
+23. Montaje de volúmenes CVM
+0018B500 fue el salto grande.
+La función contiene errores/labels como:
+addVolList
+mountVolume / lock
+getCvmfInfo
+checkMedia
+
+Su flujo aproximado:
+0018B500
+   │
+   ├── comprobar que volumen no exista
+   │
+   ├── 0018AAA0
+   │       └── crear volume record
+   │
+   ├── crear registro auxiliar
+   │
+   ├── comprobar media
+   │
+   ├── obtener información CVM
+   │
+   ├── montar volumen
+   │
+   └── validar media
+
+Por tanto, podemos considerar confirmado que estamos dentro del sistema que monta imágenes/volúmenes usados por ROFS.
+24. 0018AC98: obtención de información de media
+Su flujo:
+DAT_003A7FD0 + 0x48
+        │
+        ▼
+ media/object
+        │
+        ▼
+0018CD10
+        │
+        ▼
+0018EA18
+        │
+        ▼
+extraer información
+        │
+        ▼
+00190F58
+        │
+        ▼
+0018CD10
+        │
+        ▼
+0018EAD8
+
+Además copia:
+param1 +0x20 = metadata +0x14
+
+y selecciona algo mediante:
+metadata + 0x70 + metadata[0x0D] * 4
+
+Esto acaba de cobrar sentido gracias al descubrimiento siguiente.
+25. Detección de formato CVM
+0018EA18 limpia una estructura de:
+0x770 bytes
+
+y mira el magic de la media.
+Reconoce:
+CIMF
+CVMH
+
+Dispatch:
+CIMF
+  ↓
+0018EE68
+
+CVMH
+  ↓
+0018E800
+
+Esto es confirmado.
+Por tanto, ROFS tiene soporte explícito para una variante/formato con cabecera:
+CVMH
+
+26. Parser CVMH: 0018E800
+Es donde estamos ahora.
+Hace:
+CVMH data
+   │
+   ├── +0x0C
+   │      ↓
+   │   0018E5F8
+   │
+   └── +0x100
+          ↓
+       tabla DWORD
+          ↓ byte swap
+       metadata +0x70
+
+Concretamente:
+FUN_0018E5F8(cvm + 0x0C, metadata);
+
+y después:
+source = CVM + 0x100
+dest   = metadata + 0x70
+count  = metadata[0x19]
+
+Cada DWORD es convertido de endian.
+27. Conexión muy importante
+Antes habíamos encontrado en 0018AC98:
+iVar3 =
+    *(int *)(metadata
+             + metadata[0x0D] * 4
+             + 0x70);
+
+Ahora sabemos de dónde viene esa zona:
+CVM +0x100
+      │
+      │ 0018E800
+      ▼
+metadata +0x70
+      │
+      │ índice metadata[0x0D]
+      ▼
+0018AC98 selecciona un DWORD
+      │
+      ▼
+segunda llamada a 0018CD10
+
+Eso es una conexión directa entre la cabecera CVM y el proceso de montaje ROFS.
+28. El mapa completo actual
+Si comprimimos todo lo descubierto en una sola cadena:
+                       SHINING WIND
+                            │
+                            ▼
+                    Resource Manager
+                 001F3EA0 / 001F1A20
+                            │
+                            ▼
+                      Stream loader
+                        0019F5D0
+                            │
+                            ▼
+                        0019FF50
+                            │
+                     construye "VOL:/"
+                            │
+                            ▼
+                   ADXF/STM subsystem
+                 0012A8E8 / 00132898
+                            │
+                       pathname +0x54
+                            │
+                            ▼
+                        0013E9F8
+                            │
+                    parse "PREFIX:path"
+                            │
+                            ▼
+                   backend registry
+                      0013E628
+                            │
+                            ▼
+                           ROFS
+                            │
+                       00190060
+                            │
+                    ROFS function table
+                       003A80E0
+                            │
+                            ▼
+                       0018BB60
+                            │
+                    parse volume/path
+                            │
+                            ▼
+                       0018A9C8
+                            │
+                    find volume record
+                            │
+              ┌─────────────┴─────────────┐
+              │                           │
+         volume name                  +0x10 object
+            +0x16                       0x48 bytes
+              │                           │
+              └─────────────┬─────────────┘
+                            ▼
+                       0018FD88
+                    lookup file/entry
+                     /            \
+                    /              \
+              0018FC88          0018FAF8
+              hash scan        binary search
+                    \              /
+                     \            /
+                      0x30 entries
+                            │
+                            ▼
+                       001891F8
+                            │
+                    active ROFS handle
+                        0x3C bytes
+
+Y por el lado del montaje:
+                       ROFS mount
+                            │
+                         0018B500
+                            │
+              ┌─────────────┴─────────────┐
+              ▼                           ▼
+          0018AAA0                    0018AC98
+              │                           │
+      volume record 0x34             media object
+              │                           │
+          +0x10 object                    ▼
+             0x48                     0018EA18
+                                          │
+                              ┌───────────┴───────────┐
+                              ▼                       ▼
+                            CIMF                    CVMH
+                              │                       │
+                          0018EE68                0018E800
+                                                      │
+                                      ┌───────────────┴───────────────┐
+                                      ▼                               ▼
+                                 CVM +0x0C                        CVM +0x100
+                                      │                               │
+                                  0018E5F8                      DWORD table
+                                                                      │
+                                                                   byteswap
+                                                                      │
+                                                                      ▼
+                                                              metadata +0x70
+                                                                      │
+                                                         metadata[0x0D] index
+                                                                      │
+                                                                      ▼
+                                                                 0018AC98
+
+29. Lo que todavía NO sabemos
+Hay cuatro piezas grandes que nos faltan para cerrar la cadena:
+A. Estructura exacta de la cabecera CVMH. Estamos entrando en ella ahora. 0018E5F8 probablemente nos revele bastantes campos.
+B. Cómo se construyen exactamente las entradas de 0x30 bytes. Sabemos buscarlas, pero todavía falta encontrar dónde el índice CVM se transforma/carga en esas entradas.
+C. Significado exacto de offset/tamaño/sector de cada entrada. Ya vemos números de 64 bits y conversiones a bloques de 0x800, pero todavía no conviene bautizarlos prematuramente.
+D. La conexión final física:
+VOL:/PAC_TOWN01_01.RAX
+             ↓
+entrada ROFS
+             ↓
+???? sector/offset ????
+             ↓
+st.cvm + offset
+             ↓
+52 41 58 ...
+RAX
+
+Ese es el gran objetivo que todavía falta cerrar.
+30. Estado del proyecto
+Diría que ya superamos una frontera importante.
+Al principio teníamos:
+"el juego carga RAX desde st.cvm"
+
+pero no sabíamos prácticamente qué había entre ambas cosas.
+Ahora tenemos identificadas las capas:
+Resource Manager
+      ↓
+streaming
+      ↓
+VOL:/
+      ↓
+backend registry
+      ↓
+ROFS
+      ↓
+volume records
+      ↓
+CVM mounting
+      ↓
+CVMH parser
+      ↓
+directory/file lookup
+      ↓
+ROFS file handle
+
+Lo que estamos haciendo ahora ya no es buscar a ciegas el loader: estamos dentro del parser del filesystem CVM.
+Y nuestro siguiente punto exacto queda congelado en:
+FUN_0018E5F8
+
+porque recibe:
+CVMH + 0x0C
+
+y genera buena parte de la estructura de metadata que luego usa todo el proceso de montaje.
