@@ -899,3 +899,574 @@ porque recibe:
 CVMH + 0x0C
 
 y genera buena parte de la estructura de metadata que luego usa todo el proceso de montaje.
+
+Qué agregaría al MASTER LIST
+CONFIRMADO:
+- 0018E5F8 deserializa la parte principal de la cabecera CVMH.
+- La estructura que procesa comienza en CVMH + 0x0C.
+- La estructura interna resultante ocupa al menos 0x70 bytes antes de la tabla.
+- CVMH +0x80 es un BE32 que determina cuántos DWORDs se leen desde CVMH +0x100.
+- CVMH +0x100 contiene una tabla de DWORDs big-endian.
+- Esa tabla se convierte y almacena en metadata +0x70.
+- Un DWORD procedente de la zona CVMH +0x50 termina siendo usado como índice de esa tabla.
+- El elemento seleccionado posteriormente se pasa a 0018CD10.
+
+0018E520 = conversión de 64-bit BE compuesto por dos DWORD
+
+CVMH +0x1C → high32
+CVMH +0x20 → low32
+
+metadata +0x00 → low32
+metadata +0x04 → high32
+
+Mapa actualizado del comienzo de CVMH
+CVMH
+
++00  "CVMH"
+...
++0C  estructura principal
+...
++1C  BE32 ─┐
+           ├─ 64-bit convertido → metadata +00
++20  BE32 ─┘
+
++24 ───────┐
+           │ 7 bytes directos
++2A ───────┘                  → metadata +08..+0E
++2B  ??? / padding
+
++2C  ────────────────────────→ 0018E590
+                                 metadata +10
+
++30  BE32 ───────────────────→ metadata +14
++34  BE32 ───────────────────→ metadata +18
+...
+
+Mapa bastante preciso de CVMH
+Ya podemos dejar esto en el master list:
+CVMH
+OFFSET      SIZE      TRATAMIENTO
+------------------------------------------
++00         4         "CVMH"
+
+...
+
++1C         8         BE64
+                       ↓
+                       metadata +00
+
++24         7         copia directa
+                       ↓
+                       metadata +08
+
++2B         1         no copiado aquí
+
++2C         4         copia directa
+                       ↓
+                       metadata +10
+
++30         4         BE32
+                       ↓
+                       metadata +14
+
++34         4         BE32
+                       ↓
+                       metadata +18
+
++38         0x40      copia directa
+                       ↓
+                       metadata +1C..+5B
+                       (metadata+5B forzado a 00)
+
++78         4         copia directa
+                       ↓
+                       metadata +5C
+
++7C         1         copia directa → metadata +60
+
++7D         1         copia directa → metadata +61
+
++7E..7F     2         no procesados aquí
+
++80         4         BE32 → metadata +64
++84         4         BE32 → metadata +68
++88         4         BE32 → metadata +6C
+
+...
+
++100        N*4       tabla BE32
+                       ↓
+                       metadata +70
+
+Master list — nuevo confirmado
+Podemos agregar:
+CONFIRMADO
+- 0018CD10 es una rutina de lectura ROFS.
+- El tamaño solicitado es param_3 << 11, es decir param_3 × 2048.
+- 0018AC98 primero solicita el bloque/sector 0, cantidad 1.
+- Ese bloque contiene CVMH.
+- Después selecciona un DWORD de la tabla de CVMH +0x100.
+- Ese DWORD se usa como posición lógica para otra lectura de 2048 bytes.
+- El bloque resultante se procesa inmediatamente con 0018EAD8.
+PROBABLE, con evidencia fuerte
+- param_2 de 0018CD10 es un número de sector/LBA.
+- Los DWORD de CVMH +0x100 son números de sector/LBA.
+- +0x10 del request de 0x3C almacena el sector/posición inicial.
+
+
+
+El mapa cambió bastante
+Ahora podemos poner nombres reales a varias capas:
+st.cvm
+│
+│
+├── sector 0
+│      │
+│      ▼
+│     CVMH
+│      │
+│      └── tabla de ubicaciones
+│              │
+│              ▼
+│            ZONE
+│              │
+│              └── descriptor B
+│                       │
+│                       ▼
+│                calcular base/zona
+│                       │
+│                       │ + sector 16
+│                       ▼
+│
+├──────────── ISO 9660 Volume Descriptor
+│                       │
+│              +00 descriptor type
+│              +01 "CD001"
+│              +06 version
+│                       │
+│                       ▼
+│                  ISO filesystem
+│                       │
+│              ┌────────┴────────┐
+│              │                 │
+│         directorios         archivos
+│              │                 │
+│              └────────┬────────┘
+│                       ▼
+│                PAC_TOWN01_01.RAX
+│                       │
+│                       ▼
+│                      RAX
+│
+└── ...
+
+Esto responde una parte enorme de nuestra pregunta original:
+¿Cómo encuentra el juego los archivos dentro de st.cvm?
+
+La respuesta que empieza a emerger es:
+CVM proporciona la capa de imagen/zonas y ROFS termina navegando una estructura ISO 9660 para localizar los archivos.
+
+Master list — subir a CONFIRMADO
+Podemos agregar:
+CONFIRMADO
+- 0018A708 valida el identificador ISO 9660 "CD001" en descriptor+1.
+- El bloque leído por 0018AE88 es un ISO 9660 Volume Descriptor.
+- El +0x10 de 0018AE88 corresponde al sector lógico 16 donde comienzan los Volume Descriptors de ISO 9660.
+- ROFS trabaja con bloques lógicos de 0x800 = 2048 bytes.
+- 0018D880 copia/deserializa campos del descriptor ISO mediante una tabla.
+- 003A7FE0 es una tabla de límites/offsets de campos.
+- 0018DCD0(dst, table, N) copia table[N+1]-table[N] bytes desde ISO_buffer + table[N] hacia dst.
+
+003A7FE0 contiene los límites de los 39 campos usados para copiar/describir el PVD ISO9660; comienza en 0x000 y termina en 0x800. El campo 23 cubre 0x09C–0x0BD, correspondiente al Root Directory Record de 34 bytes.
+Qué marcaría ahora en nuestra lista
+CONFIRMADO
+0018B500 es la rutina de montaje/adición de un volumen ROFS respaldado por CVM/ISO9660.
+No necesariamente sabemos todavía el mejor nombre exacto, pero ya está suficientemente claro conceptualmente.
+Además:
+0018B500
+ ├─ evita volumen duplicado
+ ├─ crea VolumeRecord
+ ├─ obtiene metadata CVM
+ ├─ parsea CVMH/ZONE
+ ├─ localiza sector ISO
+ ├─ valida "CD001"
+ ├─ copia PVD ISO9660
+ └─ llama 0018AF28 para continuar inicialización
+
+Por el string "addVolList" y toda la secuencia, yo ya considero razonable renombrar:
+0018B500 → ROFS_MountCVMVolume
+
+Aunque si querés máxima cautela:
+0018B500 → ROFS_AddVolume
+
+Personalmente usaría ROFS_MountCVMVolume, porque nos va a resultar mucho más informativo al leer callers.
+
+Master list: nuevas confirmaciones
+CONFIRMADO:
+PVD +0x09C
+    ↓
+ISO9660 Root Directory Record
+    ↓
+0018DB20
+    ↓
+Extent Location BE → internal +0x08
+Data Length BE     → internal +0x10
+    ↓ byte-swap
+root LBA + root byte length
+    ↓
+0018F8D0
+
+Esto también sube definitivamente de hipótesis a confirmado que ROFS navega el filesystem ISO9660 contenido en la estructura CVM, al menos para esta ruta de montaje.
+Lista maestra — CONFIRMADO
+Añadimos:
+ROFS directory cache/object:
++00 = cantidad de entradas cargadas
++08 = directory LBA
++0C = volume identifier/name
++18 = comienzo de array de entradas
+cada entrada = 0x30 bytes
+
+Con una salvedad: +04 parece ser capacidad máxima de entradas por cómo se usa piVar16[1], pero todavía lo dejamos como probable.
+También queda confirmado:
+0018F598 carga un directorio ISO9660 desde su LBA, en bloques de hasta 2 sectores de 0x800, maneja padding/alineación por sector y genera las entradas internas ROFS de 0x30 bytes.
+
+Y ahora estamos justo en el punto que queríamos alcanzar desde el principio.
+
+Recordá que habíamos encontrado algo como:
+0018FD88(path_component, table_obj, volume_record)
+       ↓
+entry index
+
+y luego usaba los campos de la entrada para crear el active record.
+Ahora sabemos qué representan:
+entry +00/+04 → tamaño
+entry +08     → LBA
+entry +0C     → flags
+entry +0D     → hash
+entry +0E     → nombre
+
+Por tanto ya estamos extremadamente cerca de poder seguir:
+"PAC_TOWN01_01.RAX"
+        ↓
+hash
+        ↓
+ROFS lookup
+        ↓
+ROFS_DirectoryEntry
+        ↓
+extent_lba
+data_length
+        ↓
+ROFS_ReadSectors
+        ↓
+bytes del RAX
+
+Master list
+CONFIRMADO nuevo:
+ROFS_DirectoryEntry = 0x30 bytes
+
++00 uint32 data_length_low
++04 uint32 data_length_high
++08 uint32 extent_lba
++0C uint8  ISO file flags
++0D uint8  filename hash
++0E char[] filename
+
+Y:
+0018BB60:
+path component
+ → 0018FD88
+ → 1-based entry index
+ → entries[index-1]
+ → data length + extent LBA
+ → 001891F8
+ → active request
+
+Hemos cerrado uno de los pendientes principales: cómo las entradas ISO se convierten en las entradas 0x30 que usa ROFS y cómo una búsqueda recupera LBA+tamaño.
+
+Así que ahora queda 100% confirmado:
+ROFS entry +00 = Data Length
+ROFS entry +08 = Extent LBA
+ROFS entry +0C = ISO File Flags
+
+La arquitectura de directorios ya está cerrada
+Tenemos dos formas:
+ROFS_OpenDirectory(path,...)
+
+        ├── path comienza "/" o "\"
+        │
+        │   0018FFC0
+        │   RFDIR_SearchPath
+        │       ↓
+        │   resuelve path
+        │       ↓
+        │   directory LBA
+        │       ↓
+        │   ISO9660_LoadDirectory
+        │
+        └── nombre sin "/" inicial
+              ↓
+          0018FD88
+              ↓
+          busca entrada en root
+              ↓
+          comprueba flags & 2
+              ↓
+          entry +00 = size
+          entry +08 = LBA
+              ↓
+          ISO9660_LoadDirectory
+
+Así que sí existe un resolvedor completo de rutas. Es:
+0018FFC0
+
+No era ROFS_OpenEntry.
+
+Añadimos a CONFIRMADO
+La arquitectura ahora es:
+CVM
+ ↓
+ZONE
+ ↓
+ISO9660 PVD
+ ├──────────────────────────────┐
+ │                              │
+ ▼                              ▼
+Root Directory Record       Path Table
+ │                              │
+ ▼                              ▼
+ISO directory loader        0018FDC8
+ │                          recorre jerarquía
+ ▼                              │
+0x30 ROFS entries               ▼
+ │                         Directory LBA
+ │                              │
+ └──────────────────────────────┘
+                ↓
+        ISO9660_LoadDirectory
+
+Esto además explica por qué el PVD parser copiaba tantos campos: ROFS está usando tanto el Root Directory Record como la Path Table del ISO9660.
+Esto cierra una parte grande del RE
+Podemos marcar como CONFIRMADO:
+ISO9660 Path Table
+        │
+        ▼
+ISO9660_ParsePathTableRecord
+        │
+        ├─ name length
+        ├─ extent LBA
+        ├─ parent directory number
+        └─ directory identifier
+        │
+        ▼
+ISO9660_ResolvePathTable
+        │
+        ├─ comienza en directory #1 (root)
+        ├─ compara Parent Directory Number
+        ├─ recorre /A/B/C componente por componente
+        └─ devuelve Extent LBA del último directorio
+        │
+        ▼
+ISO9660_LoadDirectory
+        │
+        ▼
+Directory Records
+        │
+        ▼
+ROFS entries de 0x30
+
+Y eso nos permite entender algo como:
+VOL:/CHARA/PLAYER
+
+como:
+"VOL"
+  ↓
+VolumeRecord
+  ↓
+Path Table
+  ↓
+"CHARA"
+  ↓ parent/child relationship
+"PLAYER"
+  ↓
+PLAYER extent LBA
+  ↓
+ISO9660_LoadDirectory
+  ↓
+lista de archivos de PLAYER
+
+Active ROFS Request (0x3C)
+
++00/+04  total data length
++0C      directory entry index
++10      initial extent LBA
+
++14      sector position/progress A
++18      total sector count
++1C      VolumeRecord*
+
++24      sector position/progress B
++28      partial byte offset/progress
++2C      sectors in current I/O request
+
++34      allocated/initialized flag
++36      I/O activity/error state
++38      last/completion status
++3A      error code
+
+o que aprendimos
+La tabla ROFS ahora tiene:
++28  0018BB60  ROFS_OpenEntry
++2C  0018BD90  ROFS_OpenSectors
++30  0018C110  ROFS_Update/Pump
++34  0018C358  ROFS_GetFileSize
++38  0018C588  ???
++3C  0018C610  ROFS_OpenDirectory
+
+Active ROFS Request actualizado
++00/+04  data length
++08      backend/device object
++0C      directory entry index
+
++10      extent/start LBA
++14      current sector position
++18      total sector count
++1C      VolumeRecord*
+
++20      requested sector count
++24      completed/progress sectors (precisión exacta pendiente)
++28      partial bytes dentro del sector
++2C      sector count realmente aceptado/iniciado por backend
++30      destination buffer
+
++34      request slot ocupado
++36      I/O activity state
+           0 = idle
+           1 = active
+           2 = aborted/special completion
+
++38      request/read state
+           0 = idle/reset
+           1 = completed/EOF
+           2 = read pending
+           3 = error
+
++3A      error code
+
+Hay una distinción interesante entre +20 y +2C:
+request->field20 = param_2;   // cantidad solicitada
+request->field2C = uVar3;     // cantidad aceptada/iniciada
+
+Eso explica por qué ROFS_UpdateReadRequest posteriormente verifica:
+backend_transferred_bytes == request->field2C << 11
+
+y luego avanza:
+request->field14 += request->field2C;
+request->field24 += request->field2C;
+Cadena reconstruida
+Tenemos ahora:
+DirectoryEntry
+    │
+    └─ +08 = ISO extent LBA
+              │
+              ▼
+ROFS_OpenEntry
+              │
+              ▼
+request +10 = extent LBA
+request +14 = current sector
+              │
+              ▼
+ROFS_ReadSectorsAsync
+              │
+              ├─ LBA = extent_LBA + current_sector
+              │
+              ▼
+ROFS_PFS_ReadSectors
+              │
+              ├─ LBA += VolumeRecord.field04
+              │
+              ▼
+FUN_0018E038
+              │
+              ▼
+FUN_0018E490
+              │
+              ├─ byte_offset = LBA << 11
+              │
+              ▼
+FUN_001209D0(byte_offset, ...)
+
+Matemáticamente:
+byte_offset =
+(
+    ISO_extent_LBA
+  + current_sector
+  + VolumeRecord.field04
+) × 0x800
+
+Eso ya es una conclusión confirmada por código.
+Lo único que todavía no podemos afirmar es respecto de qué archivo/dispositivo se aplica ese byte offset.
+Y curiosamente param_1 de 0018E490 ni siquiera se utiliza. Eso indica que la capa inferior probablemente ya tiene abierto/configurado el medio de forma global.
+
+Por tanto, VOL no es un dispositivo físico: es el nombre lógico del volumen ROFS respaldado por st.cvm.
+Y la arquitectura ya queda muy clara:
+Juego
+  │
+  │ "VOL:/..."
+  ▼
+ROFS
+  │
+  │ volumen "VOL"
+  ▼
+st.cvm
+  │
+  │ abierto mediante
+  ▼
+CDV backend
+  │
+  ▼
+DVD / ISO de PS2
+
+Esto también explica por qué 0019FF50 fabricaba:
+VOL:/<resource>
+
+y por qué nunca encontrábamos una especie de registro directo "VOL" → ROFS: la asociación ocurre acá durante el montaje.
+Nos falta comprobar la segunda llamada
+
+Ya podemos considerar resuelto el camino lógico desde el juego hasta los CVM:
+recurso solicitado
+       │
+       ▼
+"VOL:/<ruta>"
+       │
+       ▼
+ROFS
+       │
+       ▼
+volumen "VOL"
+       │
+       ▼
+CDV:/st.cvm
+       │
+       ▼
+CVM_ParseMediaHeader
+       │
+       ▼
+ISO9660
+       │
+       ├─ Path Table
+       ├─ Directory Records
+       └─ extent LBA + tamaño
+              │
+              ▼
+       ROFS active request
+
+Y para voces:
+"VOICE:/..."
+      ↓
+ROFS
+      ↓
+CDV:/voice.cvm
+
+Además, los strings que encontraste alrededor (CHANGE DIR[VOICE:/], AdxChangeDirectoryVce) corroboran que VOICE se usa específicamente como raíz del sistema de audio.
