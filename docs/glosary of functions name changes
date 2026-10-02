@@ -1,0 +1,80 @@
+Glosario de nombres sugeridos
+Dirección / símbolo original	Nombre sugerido	Confianza / significado
+FUN_00190060	ROFS_GetInterface	Confirmado. Devuelve la interfaz externa ROFS.
+PTR_FUN_003A80E0	ROFS_Interface	Confirmado. Tabla externa de funciones ROFS.
+DAT_003A7FC8	ROFS_InternalInterface	Confirmado conceptualmente. Apunta a 003E4060.
+DAT_003E4060	ROFS_InternalInterfaceTable	Confirmado conceptualmente. Tabla interna de ROFS.
+FUN_0018B030	ROFS_Init	Confirmado.
+FUN_0018B2C8	ROFS_Shutdown	Muy fuerte.
+FUN_0018B3B8	ROFS_SetPFSBackend	Confirmado. Instala MediaBackend y obtiene PFS interface.
+FUN_0018B430	ROFS_MountVolume	Confirmado por cadena actual.
+FUN_0018B500	ROFS_MountCVMVolume	Confirmado. Montaje/parsing CVM→ISO9660.
+DAT_003A7FD0	g_ROFSContext	Confirmado.
+estructura creada	ROFS_Context	Mantener.
+FUN_0018E510	ROFS_GetPFSInterface	Confirmado.
+PTR_LAB_003E43F8	ROFS_PFS_Interface	Confirmado.
+FUN_0018E500	ROFS_PFS_SetBackendInterface	Confirmado.
+DAT_003A80D8	PFS_MediaBackend	Muy fuerte. También sirve ROFS_PFS_BackendInterface.
+FUN_0018E270	ROFS_PFS_ReadSectors	Muy fuerte.
+FUN_0018CD10	ROFS_ReadSectors	Confirmado. Sectores de 0x800.
+FUN_0018A750	ROFS_ParseVolumePath	Confirmado. Separa VOL:/....
+FUN_0018BB60	ROFS_OpenEntry	Confirmado.
+FUN_0018BD90	ROFS_OpenSectors	Confirmado.
+FUN_0018C610	ROFS_OpenDirectory	Confirmado.
+FUN_001893E8	ROFS_SeekSectors	Confirmado.
+FUN_00189550	ROFS_TellSectors	Confirmado.
+FUN_001895E8	ROFS_ReadSectorsAsync	Confirmado / muy fuerte.
+FUN_00189828	ROFS_GetTransferredBytes	Confirmado.
+FUN_00189958	ROFS_CancelRequestIO	Muy fuerte.
+FUN_001892F0	ROFS_IsDeviceIOBusy	Muy fuerte.
+FUN_00189398	ROFS_CloseRequest	Confirmado.
+FUN_0018BEE8	ROFS_UpdateReadRequest	Muy fuerte.
+FUN_0018C110	ROFS_UpdateRequests	Muy fuerte. Bombea requests activos.
+FUN_0018B8B0	ROFS_UnmountVolume	Probable/muy fuerte.
+FUN_0018C588	ROFS_GetVolumeInfo	Probable/muy fuerte.
+FUN_0018EA18	CVM_ParseMediaHeader	Confirmado.
+FUN_0018E800	CVM_ParseCVMH	Confirmado.
+FUN_0018E5F8	CVM_ParseCVMHFields	Confirmado.
+FUN_0018EAD8	CVM_ParseZoneOrCIMF	Mantener provisional.
+FUN_0018E900	CVM_ParseZONE	Fuerte.
+FUN_0018E8A8	CVM_ParseZoneDescriptor	Fuerte.
+FUN_0018A708	ISO9660_CheckCD001	Confirmado.
+FUN_0018D880	ISO9660_CopyVolumeDescriptorFields	Confirmado.
+FUN_0018DCD0	ISO9660_CopyDescriptorField	Confirmado.
+DAT_003E40C8	ISO9660_StandardIdentifier	"CD001".
+DAT_003A7FE0	ISO9660_PVD_FieldOffsets	Confirmado.
+FUN_0018DB20	ISO9660_ParseDirectoryRecord	Confirmado/muy fuerte.
+DAT_003A8080	ISO9660_DirectoryRecord_FieldOffsets	Confirmado.
+FUN_0018AF28	ISO9660_LoadRootDirectory	Muy fuerte.
+FUN_0018F598	ISO9660_LoadDirectory	Confirmado/muy fuerte.
+FUN_0018F488	ROFS_ParseISO9660DirectoryEntry	Confirmado/muy fuerte.
+FUN_0018FFC0	ISO9660_ResolveDirectoryPath	Confirmado.
+FUN_0018FDC8	ISO9660_ResolvePathTable	Confirmado.
+FUN_0018DC40	ISO9660_ParsePathTableRecord	Confirmado.
+DAT_003A80C0	ISO9660_PathTable_FieldOffsets	Confirmado.
+
+
+Los wrappers externos que acabamos de revisar
+Yo los dejaría así:
+Dirección	Nombre
+001900F0	ROFS_InterfaceClose
+00190108	ROFS_InterfaceSeek
+00190148	ROFS_InterfaceTell
+00190160	ROFS_InterfaceRead
+00190178	ROFS_InterfaceCancel
+00190190	ROFS_InterfaceGetStatus
+001901F8	ROFS_InterfaceGetTransferredBytes
+00190390	ROFS_InterfaceControl
+00190250	todavía no vale la pena nombrarla; simplemente devuelve 0
+00190258	dejar provisional
+00190270	dejar provisional hasta saber qué representa 0018A090
+
+
+Y de lo último:
+Dirección	Nombre sugerido
+00189AC8	ROFS_WrapperInit
+001290A8	FS_RegisterBackends o dejar provisional
+001291A0	MountROFSVolume
+00129148	MountROFSVolume_Locked si querés distinguir el wrapper
+0013FE10	FS_MountBackend
+001A0490	FileSystem_Init provisional, pero bastante descriptivo
