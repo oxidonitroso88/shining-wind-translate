@@ -1,0 +1,873 @@
+
+Shining Wind PS2 — Masterlist RE actualizada
+Objetivo actual: entender lo suficiente del sistema de archivos/recursos para que el futuro port con PS2Recomp pueda hacer:
+Juego pide recurso
+      ↓
+¿Existe archivo externo modificado en PC?
+      ├─ Sí → cargar archivo externo
+      └─ No → usar recurso original de st.cvm / voice.cvm
+
+Caso de prueba principal:
+PAC_TOWN01_01.RAX
+
+La idea no es decompilar todo el juego ni reconstruir perfectamente todas las estructuras.
+1. Ejecutable y entorno
+Ejecutable:
+SLPM_666.71
+
+Ghidra:
+Ghidra 12.1.4
+Emotion Engine: Reloaded
+r5900:LE:32:default
+MIPS R5900 little-endian 32-bit
+Image base: 0x100000
+
+PS2Recomp:
+D:\PS2Recomp
+commit c5a9d02
+
+Resultado actual:
+9631 funciones procesadas
+9577 recompiladas
+54 stubs
+0 skipped
+0 decode failures
+0 errores
+
+Por lo tanto, PS2Recomp ya está suficientemente encaminado. No necesitamos etiquetar todo Ghidra para recompilar.
+2. Estructura del disco
+CD/
+├── SLPM_666.71
+├── MODULES.LST
+├── MODULES.CIX
+├── modules/
+├── st.cvm
+└── voice.cvm
+
+Confirmado:
+st.cvm     → recursos generales del juego
+voice.cvm  → voces ADX
+
+Ambos CVM se pueden extraer correctamente.
+3. Montaje de los CVM
+La inicialización del filesystem termina montando:
+VOL   → CDV:/st.cvm
+VOICE → CDV:/voice.cvm
+
+Strings confirmadas en ELF:
+"VOL"
+"VOICE"
+"CDV:/st.cvm"
+"CDV:/voice.cvm"
+"VOL:/"
+
+Cadena:
+FileSystem_Init
+   ↓
+FS_RegisterBackends
+   ↓
+MountROFSVolume
+   ↓
+FS_MountBackend
+   ↓
+ROFS control command 2
+
+Funciones importantes:
+001A0490  FileSystem_Init              [provisional]
+001290A8  FS_RegisterBackends          [provisional]
+00129148  MountROFSVolume_Locked       [provisional]
+001291A0  MountROFSVolume
+0013FE10  FS_MountBackend
+
+4. Arquitectura general del filesystem
+Tenemos ya bastante bien establecida esta cadena:
+Resource Manager
+      ↓
+loader por nombre
+      ↓
+filesystem genérico
+      ↓
+ROFS
+      ↓
+PFS
+      ↓
+Media Backend / CDV
+      ↓
+st.cvm
+      ↓
+ISO9660
+      ↓
+archivo
+
+Es decir, st.cvm no se trata como un blob misterioso: internamente contiene un filesystem ISO9660 que ROFS monta como volumen.
+5. Registry de backends
+La capa genérica selecciona backends por prefijo.
+Funciones:
+0013E9F8  parsea prefijo y selecciona backend
+0013EB98  parseo relacionado
+0013E950  busca backend
+0013E628  registry
+0013E550  registra backend
+
+Registry:
+0x4289E0
+32 slots
+stride 0x10
+
+ROFS se registra mediante:
+001290D8
+   ↓
+FUN_0013E4C8("ROFS", 00190060)
+
+00190060:
+ROFS_GetInterface
+
+y devuelve:
+003A80E0  ROFS_Interface
+
+6. ROFS
+Interfaz externa:
+003A80E0 ROFS_Interface
+
+Wrappers identificados:
+001900F0  ROFS_InterfaceClose
+00190108  ROFS_InterfaceSeek
+00190148  ROFS_InterfaceTell
+00190160  ROFS_InterfaceRead
+00190178  ROFS_InterfaceCancel
+00190190  ROFS_InterfaceGetStatus
+001901F8  ROFS_InterfaceGetTransferredBytes
+00190390  ROFS_InterfaceControl
+
+ROFS_InterfaceControl maneja comandos:
+1–6
+100
+200–205
+299
+
+Confirmado:
+command 2 = MOUNT
+
+Creamos:
+enum ROFS_ControlCommand
+ROFS_CTRL_MOUNT = 2
+
+7. ROFS interno
+Tabla interna:
+003E4060
+
+Funciones importantes:
+0018B030  ROFS_Init
+0018B2C8  ROFS_Shutdown
+0018B3B8  ROFS_SetPFSBackend
+0018B500  ROFS_MountCVMVolume
+0018BB40  obtener volumen actual/default
+0018BB60  ROFS_OpenEntry
+0018BD90  ROFS_OpenSectors
+0018C110  ROFS_UpdateRequests
+0018C610  ROFS_OpenDirectory
+
+Contexto provisional:
+ROFS_Context {
+    ...
+    +0x34 MediaBackend*
+    +0x38 PFSInterface*
+}
+
+Global:
+DAT_003A7FD0 → g_ROFSContext
+
+8. CVM
+Tenemos identificada la lógica que interpreta el contenedor CVM:
+0018EA18  CVM_ParseMediaHeader
+0018E800  CVM_ParseCVMH
+0018E5F8  CVM_ParseCVMHFields
+0018E520  ReadBE64Words
+0018EAD8  CVM_ParseZoneOrCIMF
+0018E900  CVM_ParseZONE
+0018E8A8  CVM_ParseZoneDescriptor
+
+Lectura:
+0018CD10  ROFS_ReadSectors
+sector = 0x800 bytes
+
+Después de interpretar la metadata CVM, busca el volumen ISO9660.
+9. ISO9660
+Confirmamos explícitamente:
+"CD001"
+
+Funciones:
+0018A708  ISO9660_CheckCD001
+0018D880  ISO9660_CopyVolumeDescriptorFields
+0018DCD0  ISO9660_CopyDescriptorField
+
+Tabla del PVD:
+003A7FE0 ISO9660_PVD_FieldOffsets
+
+El campo:
+PVD + 0x9C
+
+es el Root Directory Record de 34 bytes.
+10. Directorios ISO9660
+Parser:
+0018DB20 ISO9660_ParseDirectoryRecord
+
+Tabla:
+003A8080 ISO9660_DirectoryRecord_FieldOffsets
+
+Campos importantes:
++04 extent LBA LE
++08 extent LBA BE
++0C data length LE
++10 data length BE
++1B flags
++22 filename length
++23 filename
+
+Root:
+0018AF28 ISO9660_LoadRootDirectory
+
+Carga:
+0018F598 ISO9660_LoadDirectory
+
+Wrapper:
+0018F8D0
+
+11. Entry interna de ROFS
+Conversión ISO → estructura interna:
+0018F488 ROFS_ParseISO9660DirectoryEntry
+
+Entry de 0x30 bytes:
++00 data_length_low
++04 data_length_high
++08 extent_lba
++0C ISO flags
++0D filename hash
++0E filename NUL
+
+Para archivos aparentemente elimina el sufijo ISO:
+;1
+
+12. Resolución de rutas
+0018A750 ROFS_ParseVolumePath
+
+Interpreta:
+VOLUME:path
+
+Ejemplo:
+VOL:/...
+
+Si no existe VOLUME:, usa el volumen default.
+Resolución de directorios:
+0018FFC0 ISO9660_ResolveDirectoryPath
+0018FDC8 ISO9660_ResolvePathTable
+0018DC40 ISO9660_ParsePathTableRecord
+
+Tabla:
+003A80C0 ISO9660_PathTable_FieldOffsets
+
+13. Apertura de un archivo
+Función fundamental:
+0018BB60 ROFS_OpenEntry
+
+Conceptualmente:
+nombre/ruta
+   ↓
+ROFS_ParseVolumePath
+   ↓
+buscar volumen
+   ↓
+buscar entrada
+   ↓
+obtener extent LBA
+   ↓
+obtener tamaño
+   ↓
+crear request de lectura
+
+Esto ya confirma que ROFS finalmente convierte:
+nombre de archivo
+→ LBA + tamaño
+
+14. Requests de lectura ROFS
+Constructor:
+00189148
+
+Wrapper/validator:
+001891F8
+
+Request de 0x3C bytes:
++00 data_length_low
++04 high
++08 ROFS_Context*
++0C directory_entry_index
++10 extent/start_lba
++14 current sector
++18 total sectors
++1C VolumeRecord*
++20 requested sectors
++24 completed whole sectors
++28 partial bytes
++2C accepted/active count
++30 destination
++34 occupied marker
++36 operation state
++38 read state
++3A error
+
+Lectura:
+001895E8 ROFS_ReadSectorsAsync
+
+Calcula:
+read_LBA = request.start_LBA + current_sector
+
+y llama al PFS.
+15. PFS
+Interfaz:
+003E43F8 ROFS_PFS_Interface
+
+Funciones conocidas:
+0018E270 ROFS_PFS_ReadSectors
+0018E038 lectura core
+0018E500 ROFS_PFS_SetBackendInterface
+
+Tenemos dos niveles:
+ROFS
+ ↓
+PFS
+ ↓
+MediaBackend
+
+En 0018E270:
+LBA físico/ajustado =
+    VolumeRecord.field04 + requested_LBA
+
+field04 parece ser el offset/base ISO dentro del CVM, aunque esa semántica exacta sigue provisional.
+16. Loader físico por nombre
+Objeto de loader identificado aproximadamente:
++00 handle
++04 filename/path
++08 allocation base
++0C aligned file buffer
++10 size
++14 state
++18 allocator flag
++1C resource ID
++20 subresource/index
++24 vtable
+
+Vtable:
+DAT_003FF780
+
+Constructor de archivo directo:
+0019FB90
+
+Creador:
+001A03B0
+
+State machine:
+0019F5D0
+
+La ruta directa hace:
+0019FC80(path)
+
+y finalmente llena:
+loader + 0x0C = bytes del archivo
+loader + 0x10 = tamaño
+
+Este punto es especialmente interesante para un futuro override desde PC.
+17. Cadena completa nombre → archivo
+Actualmente podemos describirla así:
+container/resource filename
+        ↓
+001F2710
+        ↓
+001F2270
+        ↓
+001F2130
+        ↓
+001A03B0
+        ↓
+0019FB90
+        ↓
+loader +04 = filename
+        ↓
+0019F5D0
+        ↓
+0019FC80
+        ↓
+0019FF50
+        ↓
+filesystem/backend
+        ↓
+ROFS
+        ↓
+st.cvm
+        ↓
+ISO9660
+        ↓
+extent LBA + size
+        ↓
+read
+        ↓
+loader +0C = bytes
+
+Esto es uno de los resultados más importantes de todo el RE.
+18. Resource Manager
+Funciones relevantes:
+001F0E70  Resource_ProcessData       [provisional]
+001F3EA0  Resource_LoadGeneric       [provisional]
+001F47E0  cache lookup
+001F1A20  entry loader/dispatcher
+001F1800  entry count
+001F18A0  get container entry
+001F2440  async container state machine
+001F2710  container loader
+001F2270  init resource object
+001F2E00  init object/path/hash
+
+001F1A20 reconoce tipos/tags como:
+XAR
+ARB
+XTB
+NAB
+RXT
+...
+
+y fallback genérico.
+Importante: esto no significa que esos tags sean el RAX externo; son entradas/subrecursos internos.
+19. SSZL
+Ya identificado:
+001F22190 magic check
+001F22170 decompressed size +0x0C
+001F21FF0 decompressor
+
+Magic:
+SSZL
+
+La ruta de procesamiento puede:
+datos comprimidos SSZL
+      ↓
+descomprimir
+      ↓
+Resource Manager
+
+20. Formato RAX
+Confirmado que RAX es un contenedor genérico, no un formato exclusivamente de diálogo.
+Puede contener:
+INAB
+LAPB
+TXR
+AHX
+RAX anidados
+TDMV
+DCMV
+DPK
+LZSS
+...
+
+Ejemplos:
+PAC_TOWN##_01.RAX
+PAC_MAIN...
+PAC_ROUTE...
+PAC_EVMAP
+PAC_CHAOS
+PAC_MIND_*
+PAC_MEV
+PAC_BEV
+PAC_FREE
+PAC_SEV
+PAC_OEV
+PAC_SUB
+PACK...
+SYSTEM.RAX
+STATUS.RAX
+...
+
+21. Diálogos
+Los subtítulos están en:
+PAC_TOWN##_01.RAX
+
+No en voice.cvm.
+Formato de las líneas ya conocido aproximadamente:
+[ID_AUDIO][TEXTO\n]
+
+Total aproximado:
+16.631 líneas
+
+PAC_TOWN01:
+733 líneas
+
+Los IDs de audio se pueden mapear a las voces de voice.cvm.
+Esto ya está resuelto y no necesitamos volver a reverse-engineerearlo.
+22. PAC_TOWN01_01.RAX físico
+Archivo extraído real:
+PAC_TOWN01_01.RAX
+
+Tamaño:
+2,164,352 bytes
+0x00210580
+
+Size on disk:
+2,166,784
+
+Importante corrección:
+NO existe físicamente XPAC_TOWN01_01.RAX.
+Existe:
+PAC_TOWN01_01.RAX
+
+23. Extraña tabla/datos del ELF
+En el ELF encontramos:
+003B7F75 "XPAC_TOWN01_01.RAX"
+003B7FA5 "XPAC_TOWN02_01.RAX"
+003B7FD5 "XPAC_TOWN03_01.RAX"
+
+003B8005 "YPAC_TOWN04_01.RAX"
+003B8035 "YPAC_TOWN05_01.RAX"
+003B8065 "YPAC_TOWN06_01.RAX"
+
+Localmente tienen stride:
+0x30
+
+Ejemplo TOWN01:
++00 "XPAC_TOWN01_01.RAX"
+...
++23 0x000D9F50
++27 0
++2B 0x00108253
++2F 0
+
+Pero no sabemos todavía qué significan esos campos.
+Además, no debemos interpretar toda la región 003Bxxxx como una sola tabla porque hay secuencias diferentes.
+Ejemplos:
+"PAC_PL_TOWN40_01.RAX"
+"jPAC_ROUTE01_01.RAX"
+
+"APAC_OEV01_11.RAX"
+"BPAC_SUB07..."
+
+Hipótesis todavía no demostrada:
+X/Y/A/B/etc = metadata
+PAC_...     = nombre real
+
+Puede ser que el código use string + 1, pero todavía no está probado.
+24. Búsqueda mediante FUN_001F2710
+Hicimos barrido completo de sus 34 XREFs directos.
+Resultado:
+ninguno carga directamente PAC_TOWN##_01.RAX.
+Encontramos familias como:
+system.rax
+syssound.rax
+saveload.rax
+OperateInfo.rax
+pac_eff_route.rax
+crystal5%02d.rax
+pac_eff_pXX
+BattleFieldInfo.rax
+BattleCondition.rax
+...
+
+Conclusión:
+PAC_TOWN no entra mediante un caller directo de 001F2710 con un filename constante.
+
+Eso motivó el cambio a 001F2650.
+25. FUN_001F2650
+Esta función es otra ruta importante de carga:
+*(param_1 + 0x0C) = 0;
+*(param_1 + 0x08) = param_3;
+
+resource = alloc(0x5C);
+
+resource = FUN_001F2270(
+    resource,
+    filename,
+    1,
+    param_4,
+    0
+);
+
+*(param_1 + 0x14) = resource;
+
+FUN_001F20F0(resource);
+
+...
+
+Por tanto:
+param_2 = filename/path
+
+Es una especie de wrapper de carga/asíncrono de recurso.
+26. Barrido completo de FUN_001F2650
+Hicimos los 30 XREFs.
+Identificamos y descartamos familias como:
+title.rax
+bustup/%s.rax
+soulpiece.rax
+characterSelect.rax
+characterSelect_normal.rax
+pac_DBenc_ene_%03d_%02d.rax
+PACK###
+SoulDoor.rax
+SoulTree.rax
+StageSelect...
+pac_eff_route.rax
+action.rax
+MenuWindow.rax
+sss_pac_%03d.rax
+autoskill.rax
+result.rax
+bfi_pac_enm_%s.rax
+...
+
+Últimos tres confirmados:
+002E6B40 → "sss_pac_%03d.rax"
+0031E9E0 → "autoskill.rax"
+00356F10 → "result.rax"
+00365BF0 → "bfi_pac_enm_%s.rax"
+
+Por tanto, el barrido de XREFs de 001F2650 está terminado.
+27. La pista importante: FUN_00205910
+Durante ese barrido apareció una ruta mucho más interesante.
+Función:
+FUN_00205910
+
+Construye:
+"pac_%s.rax"
+
+String:
+003E9EC0 = "pac_%s.rax"
+
+Conceptualmente:
+FUN_00205910(id, output)
+{
+    setup_table(...);
+
+    record = table[id];
+
+    string_offset = record->field_0C;
+
+    name = string_pool + string_offset;
+
+    sprintf(output, "pac_%s.rax", name);
+}
+
+Esto es exactamente el tipo de mecanismo que podría producir pac_TOWN01_01.rax.
+28. Tabla utilizada por FUN_00205910
+Objeto runtime:
+0x449510
+
+FUN_0020D9A0 prepara una vista de tabla.
+Esquema:
+offset = *(u32 *)(obj->field04 + index*4)
+
+header = obj->field08 + offset
+
+count  = *(u32 *)(header + 0)
+stride = *(u32 *)(header + 4)
+
+table.base   = header + 8
+table.pool   = obj->field0C
+table.count  = count
+table.stride = stride
+
+Después:
+record = base + stride * ID
+
+y:
+record + 0x0C
+
+es utilizado como offset al string pool.
+Resolución:
+FUN_0020DA50
+
+que básicamente hace:
+return string_pool + offset;
+
+29. Ruta candidata para PAC_TOWN
+Encontramos en una state machine grande (FUN_0025F020) algo especialmente importante:
+FUN_001F1650(1);
+
+FUN_00205910(
+    *(int *)(param_1 + 0xB4),
+    auStack_a0
+);
+
+iVar10 = FUN_0019FC50();
+
+if (iVar10 == 0) {
+    state += 2;
+    return;
+}
+
+FUN_001F2650(
+    param_1 + 0x2CC4,
+    auStack_a0,
+    1,
+    1
+);
+
+Conceptualmente:
+ID almacenado en +0xB4
+       ↓
+FUN_00205910
+       ↓
+tabla 0x449510
+       ↓
+nombre
+       ↓
+sprintf("pac_%s.rax")
+       ↓
+FUN_001F2650
+       ↓
+Resource Manager
+
+Esta es actualmente nuestra mejor candidata para la carga de los PAC de área/escenario.
+30. Hipótesis concreta que falta demostrar
+Lo que queremos demostrar ahora es:
+param_1 + 0xB4
+        ↓
+ID
+        ↓
+tabla 0x449510
+        ↓
+"TOWN01_01"
+        ↓
+FUN_00205910
+        ↓
+"pac_TOWN01_01.rax"
+        ↓
+FUN_001F2650
+
+La parte:
+FUN_00205910 → "pac_%s.rax"
+
+sí está confirmada.
+Lo que todavía falta confirmar es:
+algún ID → "TOWN01_01"
+
+31. Otros callers de FUN_00205910 relevantes
+Durante el barrido aparecieron:
+00252904
+0025B0D4
+0025D4D0
+0025EED8
+0025FD6C
+00260DAC
+00260F3C
+
+Todos utilizan el constructor dinámico:
+pac_%s.rax
+
+No necesitamos perseguirlos todos ahora si logramos demostrar la tabla mediante el caller principal.
+32. Punto ideal de override para PC
+Ya aparecen al menos dos niveles posibles.
+Nivel A — filesystem
+Interceptar cuando el loader recibe:
+"pac_TOWN01_01.rax"
+
+Antes de que ROFS lo busque en VOL:/st.cvm:
+filename
+   ↓
+¿archivo externo?
+   ├─ sí → leer PC
+   └─ no → ROFS original
+
+Este probablemente sea el sistema más genérico.
+Nivel B — Resource Manager
+Interceptar alrededor de:
+001F2270
+001F2130
+001A03B0
+0019FB90
+
+y reemplazar directamente el buffer cargado.
+Ambos siguen siendo candidatos. No hace falta decidir todavía cuál será el hook definitivo.
+33. Qué NO necesitamos investigar ahora
+Por el momento podemos dejar quietos:
+backend físico CD/DVD más profundo
+detalles internos completos de PFS
+todos los comandos ROFS
+todos los tipos de recursos
+todas las estructuras
+todos los XREFs genéricos
+PS2Recomp analyzer
+SSZL interno
+formato de diálogos
+audio IDs
+DPK
+TDMV
+
+Ya tenemos suficiente de esas capas para nuestro objetivo actual.
+34. Estado actual resumido
+La arquitectura que tenemos es:
+                    SHINING WIND
+                         │
+                  lógica del juego
+                         │
+                    ID de recurso
+                         │
+                  FUN_00205910
+                         │
+               tabla runtime 0x449510
+                         │
+                 "pac_%s.rax"
+                         │
+                    FUN_001F2650
+                         │
+                    FUN_001F2270
+                         │
+                   Resource Manager
+                         │
+                    loader físico
+                         │
+                    filename/path
+                         │
+                  filesystem genérico
+                         │
+                       ROFS
+                         │
+                ┌────────┴────────┐
+                │                 │
+              VOL               VOICE
+                │                 │
+             st.cvm           voice.cvm
+                │
+             ISO9660
+                │
+          directory entry
+                │
+          extent LBA + size
+                │
+              PFS
+                │
+          Media Backend
+                │
+             buffer
+                │
+          Resource Manager
+
+La única parte de arriba que actualmente tiene una interrogación importante es:
+ID
+ ↓
+0x449510
+ ↓
+¿TOWN01_01?
+
+Próximo objetivo
+Por eso el siguiente paso que habíamos dejado preparado es no seguir buscando loaders, sino averiguar de dónde sale/inicializa la tabla 0x449510.
+El punto inmediato es:
+FUN_0020D9A0
+
+y desde ahí determinar cómo se llena el objeto usado por:
+FUN_00205910
+
+Si conseguimos demostrar que una entrada de esa tabla contiene TOWN01_01, habremos conectado prácticamente toda la cadena que buscábamos:
+ID de área
+→ TOWN01_01
+→ pac_TOWN01_01.rax
+→ Resource Manager
+→ filesystem
+→ VOL
+→ st.cvm
+→ ISO9660
+→ LBA/tamaño
+→ buffer
