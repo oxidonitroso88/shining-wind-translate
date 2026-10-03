@@ -1470,3 +1470,41 @@ ROFS
 CDV:/voice.cvm
 
 Además, los strings que encontraste alrededor (CHANGE DIR[VOICE:/], AdxChangeDirectoryVce) corroboran que VOICE se usa específicamente como raíz del sistema de audio.
+Por tanto la ruta queda:
+param_2 = container filename
+          │
+          ▼
+     FUN_001F2710
+          │
+          ▼
+     FUN_001F2270
+          │
+          ▼
+     Resource object
+          │
+          ▼
+     FUN_001F2130
+          │
+          ▼
+     FUN_001A03B0
+          │
+          ▼
+     FUN_0019FB90
+          │
+          ▼
+     FUN_0019F5D0
+          │
+          ▼
+        ROFS
+          │
+          ▼
+       st.cvm
+
+Y después de cargarlo:
+container
+   ↓
+FUN_001F1800 → entry count
+   ↓
+FUN_001F1A20(container,index,...)
+   ↓
+recursos internos
